@@ -4,9 +4,15 @@
 __pycache__/
 *.pyc
 
-# Generated outputs
-state.json
-static/team.ics
+# Generated outputs (multi-team structure)
+state/
+static/*.ics
 
 # PythonAnywhere local files (optional)
 *.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
