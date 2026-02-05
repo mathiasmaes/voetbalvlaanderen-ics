@@ -1,0 +1,9 @@
+# PHP version - Generated files
+cache/
+state/
+*.log
+
+# Ignore test files
+test.php
+phpinfo.php
+cleanup.php
