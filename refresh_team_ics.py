@@ -2,21 +2,17 @@
 """
 refresh_team_ics.py
 -------------------
-Run this once per day on PythonAnywhere.
+Generate iCalendar (.ics) feed for any Voetbal Vlaanderen team.
 
-What it does:
-1) Fetch the full team calendar from RBFA datalake (GraphQL persisted query)
-2) Optionally fetch match details for EACH match (location/referee/score)
-3) Generate an iCalendar (.ics) feed file
-4) Maintain a small state.json so we can:
-   - keep each event UID stable (no duplicates)
-   - bump SEQUENCE only when something actually changed
-     (Apple Calendar updates are much more reliable with SEQUENCE)
+Can be run:
+1. Manually: python refresh_team_ics.py <team_id>
+2. Via Flask app (on-demand with smart caching)
 
-This script is safe for a public GitHub repo:
-- no credentials required
-- no cookies
-- all configuration via environment variables
+Features:
+- Fetches team calendar from RBFA GraphQL API
+- Optionally enriches with match details (location/referee/score)
+- Maintains stable UIDs and SEQUENCE numbers for reliable calendar updates
+- All text in Flemish (Dutch)
 """
 
 from __future__ import annotations
@@ -25,6 +21,7 @@ import datetime as dt
 import hashlib
 import json
 import os
+import sys
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
@@ -40,36 +37,38 @@ TZ = ZoneInfo(config.TZ)
 # -----------------------------
 # Small state file helpers
 # -----------------------------
-def load_state(path: str) -> Dict[str, Dict[str, Any]]:
+def load_state(team_id: str) -> Dict[str, Dict[str, Any]]:
     """
-    Loads state.json (if it exists).
-
-    We store per-event:
-      state[uid] = {"sig": "<hash>", "seq": <int>}
-
-    sig: signature of the event's important fields
-    seq: the SEQUENCE number we last used for that event
+    Loads state file for a specific team.
+    State tracks event signatures and sequence numbers.
     """
+    state_dir = os.path.join(config.BASE_DIR, "state")
+    state_path = os.path.join(state_dir, f"{team_id}.json")
+    
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(state_path, "r", encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
         return {}
     except Exception:
-        # If file is corrupted, fail gracefully by starting fresh
         return {}
 
 
-def save_state(path: str, state: Dict[str, Dict[str, Any]]) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+def save_state(team_id: str, state: Dict[str, Dict[str, Any]]) -> None:
+    """
+    Saves state file for a specific team.
+    """
+    state_dir = os.path.join(config.BASE_DIR, "state")
+    os.makedirs(state_dir, exist_ok=True)
+    state_path = os.path.join(state_dir, f"{team_id}.json")
+    
+    with open(state_path, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
 def stable_sig(obj: Any) -> str:
     """
-    Turn a Python object into a stable SHA1 hash.
-    Any change in obj => different signature.
+    Create stable hash for change detection.
     """
     blob = json.dumps(obj, ensure_ascii=False, sort_keys=True)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()
@@ -80,10 +79,7 @@ def stable_sig(obj: Any) -> str:
 # -----------------------------
 def parse_dt(val: Optional[str]) -> Optional[dt.datetime]:
     """
-    RBFA datalake returns ISO timestamps that sometimes have NO timezone
-    (e.g. '2025-12-18T19:00:00').
-
-    We interpret such timestamps as local Europe/Brussels time.
+    Parse RBFA timestamps (assume Europe/Brussels if no timezone).
     """
     if not val:
         return None
@@ -100,11 +96,7 @@ def parse_dt(val: Optional[str]) -> Optional[dt.datetime]:
 # -----------------------------
 def gql_post(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Basic GraphQL POST helper.
-
-    Note:
-    - No auth headers required (public data)
-    - We mimic the website's Origin/Referer because some servers are picky.
+    POST to RBFA GraphQL endpoint.
     """
     headers = {
         "accept": "application/json, text/plain, */*",
@@ -124,16 +116,68 @@ def gql_post(payload: Dict[str, Any]) -> Dict[str, Any]:
     return data
 
 
-def fetch_team_calendar() -> List[Dict[str, Any]]:
+def fetch_team_info(team_id: str) -> Optional[Dict[str, Any]]:
     """
-    Calls the persisted query GetTeamCalendar you captured.
-
-    Returns the list: data.teamCalendar[]
+    Fetch basic team information (name, logo) for validation.
+    Uses the same teamCalendar query but just extracts team info.
     """
     payload = {
         "operationName": "GetTeamCalendar",
         "variables": {
-            "teamId": config.TEAM_ID,
+            "teamId": team_id,
+            "language": config.LANGUAGE,
+            "sortByDate": config.SORT_BY_DATE,
+        },
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": config.TEAM_CALENDAR_SHA,
+            }
+        },
+    }
+
+    try:
+        resp = gql_post(payload)
+        items = resp.get("data", {}).get("teamCalendar", [])
+        
+        # Extract team info from first match
+        if items and len(items) > 0:
+            first_match = items[0]
+            # Try to get team name from either home or away team
+            home_team = first_match.get("homeTeam", {})
+            away_team = first_match.get("awayTeam", {})
+            
+            # Determine which team matches our team_id
+            team_name = None
+            team_logo = None
+            
+            if isinstance(home_team, dict) and str(home_team.get("id")) == str(team_id):
+                team_name = home_team.get("name")
+                team_logo = home_team.get("logo") or home_team.get("logoUrl")
+            elif isinstance(away_team, dict) and str(away_team.get("id")) == str(team_id):
+                team_name = away_team.get("name")
+                team_logo = away_team.get("logo") or away_team.get("logoUrl")
+            
+            if team_name:
+                return {
+                    "id": team_id,
+                    "name": team_name,
+                    "logo": team_logo
+                }
+        
+        return None
+    except Exception:
+        return None
+
+
+def fetch_team_calendar(team_id: str) -> List[Dict[str, Any]]:
+    """
+    Fetch full team calendar.
+    """
+    payload = {
+        "operationName": "GetTeamCalendar",
+        "variables": {
+            "teamId": team_id,
             "language": config.LANGUAGE,
             "sortByDate": config.SORT_BY_DATE,
         },
@@ -148,25 +192,20 @@ def fetch_team_calendar() -> List[Dict[str, Any]]:
     resp = gql_post(payload)
     items = resp.get("data", {}).get("teamCalendar", [])
     if not isinstance(items, list):
-        raise RuntimeError("Unexpected response shape: data.teamCalendar is not a list")
+        raise RuntimeError("Unexpected response: teamCalendar not a list")
     return items
 
 
 def fetch_match_detail(match_id: str) -> Optional[Dict[str, Any]]:
     """
-    Calls the match detail persisted query (you need MATCH_DETAIL_SHA set).
-
-    Why is this optional?
-    - If you don't set MATCH_DETAIL_SHA, we still produce a basic calendar.
-    - If you DO set it, we enrich events with location/referee/score.
-
-    Return: data.matchDetail object (dict) or None.
+    Fetch detailed match info (location, referee, score).
+    Only works if MATCH_DETAIL_SHA is configured.
     """
     if not config.MATCH_DETAIL_SHA:
         return None
 
     payload = {
-        "operationName": "GetMatchDetail",  # operation name usually this; if yours differs, change it.
+        "operationName": "GetMatchDetail",
         "variables": {
             "matchId": match_id,
             "language": config.LANGUAGE,
@@ -197,8 +236,7 @@ def get_team_name(team_obj: Any) -> str:
 
 def format_officials(officials: Any) -> str:
     """
-    officials is typically a list of dicts like:
-      { firstName, lastName, function: "referee", personAssigned: true, ... }
+    Format referee names.
     """
     if not isinstance(officials, list):
         return ""
@@ -216,8 +254,7 @@ def format_officials(officials: Any) -> str:
 
 def format_score(outcome: Any) -> str:
     """
-    outcome typically has:
-      homeTeamGoals, awayTeamGoals, (optional penalties)
+    Format match score.
     """
     if not isinstance(outcome, dict):
         return ""
@@ -229,16 +266,13 @@ def format_score(outcome: Any) -> str:
     hp = outcome.get("homeTeamPenaltiesScored")
     ap = outcome.get("awayTeamPenaltiesScored")
     if hp is not None and ap is not None:
-        score += f" (pens {hp}-{ap})"
+        score += f" (strafschoppen {hp}-{ap})"
     return score
 
 
 def format_location(location_obj: Any) -> str:
     """
-    From your screenshot, matchDetail.location includes:
-      name, address, postalCode, city
-
-    We combine into a single LOCATION string that map apps can use.
+    Format venue location.
     """
     if not isinstance(location_obj, dict):
         return ""
@@ -247,7 +281,6 @@ def format_location(location_obj: Any) -> str:
     postal = (location_obj.get("postalCode") or "").strip()
     city = (location_obj.get("city") or "").strip()
 
-    # Build "Name — Address, Postal City"
     parts = []
     if name:
         parts.append(name)
@@ -261,21 +294,23 @@ def format_location(location_obj: Any) -> str:
 # -----------------------------
 # ICS building
 # -----------------------------
-def build_ics(events: List[Dict[str, Any]], state: Dict[str, Dict[str, Any]]) -> bytes:
+def build_ics(team_id: str, events: List[Dict[str, Any]], state: Dict[str, Dict[str, Any]]) -> bytes:
     """
-    Convert match dicts into an iCalendar feed.
-
-    Efficiency note:
-    - We always regenerate the ICS file daily (simple + robust).
-    - BUT we only bump SEQUENCE for events whose signature changed.
-      That’s the “only update what changed” part.
+    Build iCalendar feed in Flemish.
     """
+    # Get team name for calendar title
+    team_name = "Team" + f" {team_id}"
+    if events and len(events) > 0:
+        team_info = fetch_team_info(team_id)
+        if team_info:
+            team_name = team_info.get("name", team_name)
+    
     cal = Calendar()
-    cal.add("prodid", "-//Voetbal Vlaanderen DIY Feed//EN")
+    cal.add("prodid", "-//Voetbal Vlaanderen Kalender//NL")
     cal.add("version", "2.0")
     cal.add("calscale", "GREGORIAN")
     cal.add("method", "PUBLISH")
-    cal.add("x-wr-calname", "FC De Ploegmoats (DIY)")
+    cal.add("x-wr-calname", team_name)
     cal.add("x-wr-timezone", config.TZ)
 
     now = dt.datetime.now(TZ)
@@ -285,34 +320,29 @@ def build_ics(events: List[Dict[str, Any]], state: Dict[str, Dict[str, Any]]) ->
         if not match_id:
             continue
 
-        # Base info from teamCalendar
+        # Parse start time
         start_raw = item.get("startDateTime") or item.get("startTime") or item.get("startDate")
         start_dt = parse_dt(start_raw)
         if not start_dt:
             continue
         end_dt = start_dt + dt.timedelta(minutes=config.MATCH_DURATION_MIN)
 
-        home = get_team_name(item.get("homeTeam")) or "Home"
-        away = get_team_name(item.get("awayTeam")) or "Away"
+        home = get_team_name(item.get("homeTeam")) or "Thuis"
+        away = get_team_name(item.get("awayTeam")) or "Uit"
 
-        # Requested: hyphen instead of 'vs'
         base_title = f"{home} - {away}"
 
         series = ""
         if isinstance(item.get("series"), dict):
             series = (item["series"].get("name") or "").strip()
 
-        # Some info might exist already in teamCalendar…
         score = format_score(item.get("outcome"))
         officials = format_officials(item.get("officials"))
         match_state = (item.get("state") or "").strip()
 
-        # …but matchDetail is where location is guaranteed (based on your click example).
         location = ""
         detail = fetch_match_detail(match_id)
         if detail:
-            # overwrite/enrich using detail (usually more complete)
-            # score/ref can also be more accurate here than in calendar list
             location = format_location(detail.get("location"))
             score = format_score(detail.get("outcome")) or score
             officials = format_officials(detail.get("officials")) or officials
@@ -320,27 +350,27 @@ def build_ics(events: List[Dict[str, Any]], state: Dict[str, Dict[str, Any]]) ->
             if isinstance(detail.get("series"), dict):
                 series = (detail["series"].get("name") or "").strip() or series
 
-        # Title: optionally append score if we have one
+        # Title with score if available
         title = base_title + (f" ({score})" if score else "")
 
-        # Description lines
+        # Description in Flemish
         desc_lines = []
         if series:
-            desc_lines.append(f"Competition: {series}")
+            desc_lines.append(f"Competitie: {series}")
         if officials:
-            desc_lines.append(f"Referee: {officials}")
+            desc_lines.append(f"Scheidsrechter: {officials}")
         if score:
-            desc_lines.append(f"Score: {score}")
+            desc_lines.append(f"Uitslag: {score}")
         if match_state:
-            desc_lines.append(f"State: {match_state}")
-        desc_lines.append(f"Match ID: {match_id}")
+            desc_lines.append(f"Status: {match_state}")
+        desc_lines.append(f"Wedstrijd ID: {match_id}")
 
         description = "\n".join(desc_lines)
 
-        # Stable UID => calendar updates the same event
+        # Stable UID
         uid = f"vv-{match_id}@datalake.rbfa"
 
-        # Signature => detect if anything important changed
+        # Detect changes
         core = {
             "start": start_dt.isoformat(),
             "end": end_dt.isoformat(),
@@ -354,11 +384,11 @@ def build_ics(events: List[Dict[str, Any]], state: Dict[str, Dict[str, Any]]) ->
         prev_sig = prev.get("sig")
         prev_seq = int(prev.get("seq", 0) or 0)
 
-        # Only bump sequence if something changed
+        # Bump sequence only if changed
         seq = prev_seq if prev_sig == new_sig else prev_seq + 1
         state[uid] = {"sig": new_sig, "seq": seq}
 
-        # Build VEVENT
+        # Build event
         ev = Event()
         ev.add("uid", uid)
         ev.add("sequence", seq)
@@ -377,24 +407,40 @@ def build_ics(events: List[Dict[str, Any]], state: Dict[str, Dict[str, Any]]) ->
     return cal.to_ical()
 
 
+def generate_ics_for_team(team_id: str) -> bytes:
+    """
+    Main function to generate ICS for a specific team.
+    Called by Flask app or can be run standalone.
+    """
+    state = load_state(team_id)
+    calendar_items = fetch_team_calendar(team_id)
+    ics_bytes = build_ics(team_id, calendar_items, state)
+    save_state(team_id, state)
+    return ics_bytes
+
+
 def main() -> None:
-    state = load_state(config.STATE_PATH)
-
-    # 1) fetch full calendar
-    calendar_items = fetch_team_calendar()
-
-    # 2) build ICS (and update state in-memory)
-    ics_bytes = build_ics(calendar_items, state)
-
-    # 3) write output
-    os.makedirs(os.path.dirname(config.ICS_OUTPUT_PATH), exist_ok=True)
-    with open(config.ICS_OUTPUT_PATH, "wb") as f:
+    """
+    CLI entry point.
+    Usage: python refresh_team_ics.py <team_id>
+    """
+    if len(sys.argv) > 1:
+        team_id = sys.argv[1]
+    else:
+        team_id = config.TEAM_ID
+    
+    print(f"Generating ICS for team {team_id}...")
+    ics_bytes = generate_ics_for_team(team_id)
+    
+    # Write to static directory
+    static_dir = os.path.join(config.BASE_DIR, "static")
+    os.makedirs(static_dir, exist_ok=True)
+    output_path = os.path.join(static_dir, f"{team_id}.ics")
+    
+    with open(output_path, "wb") as f:
         f.write(ics_bytes)
-
-    # 4) persist state
-    save_state(config.STATE_PATH, state)
-
-    print(f"OK: wrote {len(calendar_items)} calendar items to {config.ICS_OUTPUT_PATH}")
+    
+    print(f"✓ Wrote ICS to {output_path}")
 
 
 if __name__ == "__main__":
