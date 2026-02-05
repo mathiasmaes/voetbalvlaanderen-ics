@@ -4,6 +4,21 @@
 
 Genereer een iCalendar feed voor elk Voetbal Vlaanderen / RBFA team door middel van RBFA's publieke GraphQL endpoint. Abonneer je op de feed in Apple Calendar, Google Calendar, Outlook of eender welke andere kalender-app.
 
+## 🎯 Twee versies beschikbaar
+
+### Python/Flask versie
+Voor PythonAnywhere of andere Python hosting
+- Zie documentatie hieronder
+
+### PHP versie (voor one.com)
+**✨ NIEUW**: Volledig werkende PHP implementatie voor one.com hosting
+- 📁 Zie [`php-version/`](./php-version/) folder
+- 📖 Lees [`php-version/README.md`](./php-version/README.md) voor installatie instructies
+- 🎯 Identieke functionaliteit als Flask versie
+- ⚡ Geen dependencies, gewoon uploaden en draaien!
+
+---
+
 ## ✨ Features
 
 - 🎯 **Multi-team ondersteuning** - Werkt voor elk Voetbal Vlaanderen team
@@ -28,13 +43,13 @@ Genereer een iCalendar feed voor elk Voetbal Vlaanderen / RBFA team door middel 
 ### Technisch
 
 - **Landing page**: Gebruikers voeren team ID in via een webformulier
-- **Team validatie**: Flask API roept GraphQL aan om team info op te halen
+- **Team validatie**: API roept GraphQL aan om team info op te halen
 - **ICS generatie**: Bij eerste request wordt `.ics` bestand gegenereerd
 - **Smart caching**: Bestand wordt 3 dagen gecached (match schedules wijzigen zelden)
 - **Automatische updates**: Kalender-apps pollen periodiek de URL, wat automatisch vernieuwing triggert na 3 dagen
 - **Per-team state**: Elk team krijgt eigen state file voor SEQUENCE tracking
 
-## 📋 Vereisten
+## 📋 Vereisten (Python versie)
 
 - Python 3.9+
 - Flask
@@ -42,7 +57,7 @@ Genereer een iCalendar feed voor elk Voetbal Vlaanderen / RBFA team door middel 
 - python-dateutil
 - icalendar
 
-## 🛠️ Installatie & Gebruik
+## 🛠️ Installatie & Gebruik (Python versie)
 
 ### Lokaal draaien
 
@@ -114,8 +129,14 @@ voetbalvlaanderen-ics/
 │   └── index.html         # Landing page (responsive UI)
 ├── static/                # Gegenereerde ICS bestanden
 │   └── <team_id>.ics     # Per-team kalender feeds
-└── state/                 # State tracking per team
-    └── <team_id>.json    # Event signatures & sequences
+├── state/                 # State tracking per team
+│   └── <team_id>.json    # Event signatures & sequences
+└── php-version/           # 🆕 PHP implementatie voor one.com
+    ├── index.php          # Landing page
+    ├── api.php            # Team validatie API
+    ├── calendar.php       # ICS generator
+    ├── .htaccess          # Apache config
+    └── README.md          # PHP installatie instructies
 ```
 
 ## 🔍 Team ID vinden
@@ -187,7 +208,7 @@ MIT License - zie LICENSE bestand voor details.
 
 - Monitor disk usage in `static/` en `state/` mappen
 - Oude team bestanden kunnen handmatig verwijderd worden indien nodig
-- Logs checken met `tail -f /var/log/pythonanywhere.log`
+- Logs checken met `tail -f /var/log/pythonanywhere.log` (Python) of via one.com control panel (PHP)
 
 ### Voor gebruikers
 
@@ -210,6 +231,21 @@ MIT License - zie LICENSE bestand voor details.
 - Check server logs
 - Mogelijk tijdelijk probleem met RBFA API
 - Probeer later opnieuw
+
+## 🆚 Python vs PHP versie
+
+| Feature | Python (Flask) | PHP (one.com) |
+|---------|----------------|---------------|
+| **Hosting** | PythonAnywhere | one.com, shared hosting |
+| **Dependencies** | pip packages | Geen (built-in PHP) |
+| **Setup** | WSGI configuratie | Upload & klaar |
+| **Performance** | Uitstekend | Uitstekend |
+| **Features** | 100% | 100% |
+| **Onderhoud** | Gemiddeld | Simpel |
+| **Kosten** | Gratis (PythonAnywhere) | Bestaande hosting |
+
+**Kies Python** als je al PythonAnywhere gebruikt of Python development kent.  
+**Kies PHP** als je one.com hosting hebt of snelle deployment wilt zonder setup.
 
 ---
 
