@@ -1,0 +1,526 @@
+<?php
+/**
+ * index.php
+ * Landing page for Voetbal Vlaanderen iCalendar Generator
+ * PHP version for one.com hosting
+ */
+
+// Get base URL for calendar links
+$base_url = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://$_SERVER[HTTP_HOST]" . dirname($_SERVER['PHP_SELF']);
+?>
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voetbal Vlaanderen Kalender Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 100%;
+            padding: 40px;
+            animation: slideUp 0.5s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            color: #2d3748;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .header .football-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+            animation: rotate 3s linear infinite;
+        }
+
+        @keyframes rotate {
+            0%, 100% { transform: rotate(0deg); }
+            25% { transform: rotate(-10deg); }
+            75% { transform: rotate(10deg); }
+        }
+
+        .header p {
+            color: #718096;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            background: #f7fafc;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .result {
+            margin-top: 25px;
+            padding: 20px;
+            border-radius: 12px;
+            display: none;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .result.success {
+            background: #f0fdf4;
+            border: 2px solid #86efac;
+            display: block;
+        }
+
+        .result.error {
+            background: #fef2f2;
+            border: 2px solid #fca5a5;
+            display: block;
+        }
+
+        .team-info {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .team-logo {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: #f7fafc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .team-logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .team-logo.placeholder {
+            font-size: 32px;
+        }
+
+        .team-details h3 {
+            color: #2d3748;
+            font-size: 20px;
+            margin-bottom: 5px;
+        }
+
+        .team-details p {
+            color: #718096;
+            font-size: 14px;
+        }
+
+        .calendar-url {
+            background: #f7fafc;
+            padding: 12px;
+            border-radius: 8px;
+            word-break: break-all;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #4a5568;
+            margin-bottom: 15px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .copy-btn {
+            padding: 10px 20px;
+            background: #48bb78;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-right: 10px;
+            transition: all 0.2s ease;
+        }
+
+        .copy-btn:hover {
+            background: #38a169;
+        }
+
+        .subscribe-btn {
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.2s ease;
+        }
+
+        .subscribe-btn:hover {
+            background: #5568d3;
+        }
+
+        .error-message {
+            color: #dc2626;
+            font-weight: 600;
+            font-size: 16px;
+            text-align: center;
+        }
+
+        .instructions {
+            background: #fef3c7;
+            border: 2px solid #fbbf24;
+            border-radius: 12px;
+            padding: 15px;
+            margin-top: 15px;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #78350f;
+        }
+
+        .instructions strong {
+            display: block;
+            margin-bottom: 8px;
+            color: #92400e;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .footer {
+            margin-top: 30px;
+            text-align: center;
+            color: #718096;
+            font-size: 13px;
+        }
+
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Mobile responsive adjustments */
+        @media (max-width: 600px) {
+            .container {
+                padding: 25px;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .header .football-icon {
+                font-size: 40px;
+            }
+
+            .team-info {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .team-logo {
+                margin-right: 0;
+                margin-bottom: 15px;
+            }
+
+            .copy-btn, .subscribe-btn {
+                width: 100%;
+                margin: 5px 0;
+            }
+
+            .calendar-url {
+                font-size: 11px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="football-icon">⚽</div>
+            <h1>Voetbal Vlaanderen Kalender</h1>
+            <p>Genereer een iCal feed voor jouw team en abonneer je in Apple Calendar, Google Calendar, of Outlook</p>
+        </div>
+
+        <form id="teamForm">
+            <div class="form-group">
+                <label for="teamId">Team ID</label>
+                <input type="text" id="teamId" name="teamId" placeholder="Bijv. 347325" required>
+            </div>
+            <button type="submit" class="btn" id="submitBtn">Valideer Team</button>
+        </form>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p style="margin-top: 10px; color: #718096;">Team ophalen...</p>
+        </div>
+
+        <div class="result" id="result">
+            <div class="team-info" id="teamInfo"></div>
+            <div class="calendar-url" id="calendarUrl"></div>
+            <button class="copy-btn" onclick="copyToClipboard()">📋 Kopieer URL</button>
+            <a class="subscribe-btn" id="subscribeLink" href="#">📅 Abonneer</a>
+            
+            <div class="instructions">
+                <strong>📱 Hoe te gebruiken:</strong>
+                <strong>Apple Calendar (iPhone/Mac):</strong>
+                1. Klik op "Abonneer" of kopieer de URL<br>
+                2. Ga naar Instellingen → Kalender → Accounts → Account toevoegen<br>
+                3. Kies "Andere" → "Voeg Abonnementskalender toe"<br>
+                4. Plak de URL en klik op "Volgende"<br><br>
+                
+                <strong>Google Calendar:</strong>
+                1. Kopieer de URL<br>
+                2. Ga naar calendar.google.com<br>
+                3. Klik op "+" naast "Andere agenda's"<br>
+                4. Selecteer "Via URL"<br>
+                5. Plak de URL en klik op "Agenda toevoegen"<br><br>
+                
+                <strong>🔄 Updates:</strong> Je kalender wordt automatisch elke 3 dagen bijgewerkt wanneer je kalender-app de feed controleert.
+            </div>
+        </div>
+
+        <div class="result error" id="error" style="display: none;">
+            <p class="error-message" id="errorMessage"></p>
+        </div>
+
+        <div class="footer">
+            Gemaakt met ❤️ voor Voetbal Vlaanderen teams<br>
+            <a href="https://github.com/mathiasmaes/voetbalvlaanderen-ics" target="_blank">GitHub</a>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('teamForm');
+        const loading = document.getElementById('loading');
+        const result = document.getElementById('result');
+        const error = document.getElementById('error');
+        const submitBtn = document.getElementById('submitBtn');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const teamId = document.getElementById('teamId').value.trim();
+            
+            if (!teamId) {
+                showError('Vul een team ID in');
+                return;
+            }
+
+            // Hide previous results
+            result.style.display = 'none';
+            error.style.display = 'none';
+            loading.classList.add('active');
+            submitBtn.disabled = true;
+
+            try {
+                const response = await fetch('api.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ team_id: teamId })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showSuccess(data);
+                } else {
+                    showError(data.error || 'Onbekende fout');
+                }
+            } catch (err) {
+                showError('Fout bij verbinden met server');
+            } finally {
+                loading.classList.remove('active');
+                submitBtn.disabled = false;
+            }
+        });
+
+        function showSuccess(data) {
+            const teamInfo = document.getElementById('teamInfo');
+            const calendarUrl = document.getElementById('calendarUrl');
+            const subscribeLink = document.getElementById('subscribeLink');
+            
+            const url = '<?php echo $base_url; ?>/calendar.php?team_id=' + data.id;
+            
+            // Build team info HTML
+            let logoHtml = '';
+            if (data.logo) {
+                logoHtml = `<div class="team-logo"><img src="${data.logo}" alt="${data.name}"></div>`;
+            } else {
+                logoHtml = '<div class="team-logo placeholder">🏆</div>';
+            }
+            
+            teamInfo.innerHTML = `
+                ${logoHtml}
+                <div class="team-details">
+                    <h3>${data.name}</h3>
+                    <p>Team ID: ${data.id}</p>
+                </div>
+            `;
+            
+            calendarUrl.textContent = url;
+            subscribeLink.href = url;
+            
+            result.classList.add('success');
+            result.style.display = 'block';
+            error.style.display = 'none';
+            
+            // Store URL globally for copy function
+            window.currentUrl = url;
+        }
+
+        function showError(message) {
+            document.getElementById('errorMessage').textContent = message;
+            error.style.display = 'block';
+            result.style.display = 'none';
+        }
+
+        function copyToClipboard() {
+            if (!window.currentUrl) return;
+            
+            navigator.clipboard.writeText(window.currentUrl).then(() => {
+                const btn = document.querySelector('.copy-btn');
+                const originalText = btn.textContent;
+                btn.textContent = '✓ Gekopieerd!';
+                btn.style.background = '#10b981';
+                
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.background = '#48bb78';
+                }, 2000);
+            }).catch(err => {
+                alert('Fout bij kopiëren. Probeer handmatig te selecteren.');
+            });
+        }
+    </script>
+</body>
+</html>
