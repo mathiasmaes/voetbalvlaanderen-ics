@@ -1,0 +1,41 @@
+# .htaccess for one.com PHP hosting
+# Ensures proper PHP execution and security
+
+# Enable PHP error reporting (disable in production)
+php_flag display_errors Off
+php_flag log_errors On
+
+# Set timezone
+php_value date.timezone "Europe/Brussels"
+
+# Increase memory and execution time for calendar generation
+php_value memory_limit 128M
+php_value max_execution_time 60
+
+# Security: Prevent directory listing
+Options -Indexes
+
+# Security: Protect state and cache directories
+<FilesMatch "\.(json|log)$">
+    Require all denied
+</FilesMatch>
+
+# Set proper MIME type for ICS files
+<FilesMatch "\.ics$">
+    Header set Content-Type "text/calendar; charset=utf-8"
+</FilesMatch>
+
+# Enable caching for static files
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/calendar "access plus 3 days"
+</IfModule>
+
+# Rewrite rules (if needed)
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Force HTTPS (uncomment if you have SSL)
+    # RewriteCond %{HTTPS} off
+    # RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
