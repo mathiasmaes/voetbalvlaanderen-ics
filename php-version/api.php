@@ -3,6 +3,8 @@
  * api.php
  * Team validation API endpoint
  * Calls RBFA GraphQL to fetch team information
+ * 
+ * Security: Enhanced validation and error handling
  */
 
 header('Content-Type: application/json');
@@ -18,6 +20,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $input = file_get_contents('php://input');
 $data = json_decode($input, true);
 
+// ✅ SECURITY FIX: Validate JSON decode
+if (json_last_error() !== JSON_ERROR_NONE) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'error' => 'Invalid JSON']);
+    exit;
+}
+
 if (!isset($data['team_id']) || empty(trim($data['team_id']))) {
     http_response_code(400);
     echo json_encode(['success' => false, 'error' => 'Vul een team ID in']);
@@ -26,8 +35,22 @@ if (!isset($data['team_id']) || empty(trim($data['team_id']))) {
 
 $team_id = trim($data['team_id']);
 
-// Validate team_id is alphanumeric
+// ✅ SECURITY FIX 1: Enhanced validation
 if (!ctype_alnum($team_id)) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'error' => 'Ongeldig team ID formaat']);
+    exit;
+}
+
+// ✅ SECURITY FIX 2: Length limit to prevent abuse
+if (strlen($team_id) > 50) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'error' => 'Team ID te lang']);
+    exit;
+}
+
+// ✅ SECURITY FIX 3: Explicit path traversal protection
+if (strpos($team_id, '..') !== false || strpos($team_id, '/') !== false || strpos($team_id, '\\') !== false) {
     http_response_code(400);
     echo json_encode(['success' => false, 'error' => 'Ongeldig team ID formaat']);
     exit;
@@ -73,12 +96,16 @@ $curl_error = curl_error($ch);
 curl_close($ch);
 
 if ($curl_error) {
+    // ✅ SECURITY FIX 4: Log error internally, generic message to user
+    error_log('RBFA API connection error for team ' . $team_id . ': ' . $curl_error);
     http_response_code(500);
     echo json_encode(['success' => false, 'error' => 'Fout bij verbinden met RBFA API']);
     exit;
 }
 
 if ($http_code !== 200) {
+    // ✅ SECURITY FIX 4: Log HTTP code, generic message to user
+    error_log('RBFA API HTTP error ' . $http_code . ' for team ' . $team_id);
     http_response_code(500);
     echo json_encode(['success' => false, 'error' => 'RBFA API fout']);
     exit;
@@ -88,8 +115,10 @@ $result = json_decode($response, true);
 
 // Check for GraphQL errors
 if (isset($result['errors'])) {
+    // ✅ SECURITY FIX 4: Log GraphQL errors, generic message to user
+    error_log('GraphQL error for team ' . $team_id . ': ' . json_encode($result['errors']));
     http_response_code(500);
-    echo json_encode(['success' => false, 'error' => 'GraphQL fout: ' . json_encode($result['errors'])]);
+    echo json_encode(['success' => false, 'error' => 'Fout bij ophalen team data']);
     exit;
 }
 
