@@ -194,7 +194,6 @@ function build_ics_content($team_id, $team_name, $calendar_items, &$state) {
         // Get team names
         $home = ($item['homeTeam']['name'] ?? 'Thuis');
         $away = ($item['awayTeam']['name'] ?? 'Uit');
-        $title = $home . ' - ' . $away;
         
         // Get series/competition
         $series = '';
@@ -204,14 +203,22 @@ function build_ics_content($team_id, $team_name, $calendar_items, &$state) {
         
         // Get score
         $score = format_score($item['outcome'] ?? null);
-        if ($score) {
-            $title .= ' (' . $score . ')';
-        }
+        
+        // Get match state
+        $match_state = strtolower(trim($item['state'] ?? ''));
         
         // Get officials
         $officials = format_officials($item['officials'] ?? []);
         
-        // Build description (in Flemish)
+        // Build title: Add score at START if game is finished
+        if (in_array($match_state, ['played', 'afgelopen', 'finished']) && $score) {
+            $title = $score . ' ' . $home . ' - ' . $away;
+        } else {
+            // For upcoming/planned games, no score in title
+            $title = $home . ' - ' . $away;
+        }
+        
+        // Build description (in Flemish) - properly escaped for ICS
         $desc_parts = [];
         if ($series) {
             $desc_parts[] = 'Competitie: ' . $series;
@@ -227,7 +234,8 @@ function build_ics_content($team_id, $team_name, $calendar_items, &$state) {
         }
         $desc_parts[] = 'Wedstrijd ID: ' . $match_id;
         
-        $description = implode('\n', $desc_parts);
+        // Join with escaped newlines for ICS format
+        $description = implode('\\n', $desc_parts);
         
         // Location (if available)
         $location = '';
@@ -261,16 +269,16 @@ function build_ics_content($team_id, $team_name, $calendar_items, &$state) {
         $lines[] = 'BEGIN:VEVENT';
         $lines[] = 'UID:' . $uid;
         $lines[] = 'SEQUENCE:' . $seq;
-        $lines[] = 'DTSTAMP:' . $now->format('Ymd\THis\Z');
-        $lines[] = 'DTSTART;TZID=' . TIMEZONE . ':' . $start_dt->format('Ymd\THis');
-        $lines[] = 'DTEND;TZID=' . TIMEZONE . ':' . $end_dt->format('Ymd\THis');
+        $lines[] = 'DTSTAMP:' . $now->format('Ymd\\THis\\Z');
+        $lines[] = 'DTSTART;TZID=' . TIMEZONE . ':' . $start_dt->format('Ymd\\THis');
+        $lines[] = 'DTEND;TZID=' . TIMEZONE . ':' . $end_dt->format('Ymd\\THis');
         $lines[] = 'SUMMARY:' . escape_ics($title);
         
         if ($location) {
             $lines[] = 'LOCATION:' . escape_ics($location);
         }
         
-        $lines[] = 'DESCRIPTION:' . escape_ics($description);
+        $lines[] = 'DESCRIPTION:' . $description;
         $lines[] = 'END:VEVENT';
     }
     
