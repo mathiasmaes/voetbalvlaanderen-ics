@@ -330,8 +330,6 @@ def build_ics(team_id: str, events: List[Dict[str, Any]], state: Dict[str, Dict[
         home = get_team_name(item.get("homeTeam")) or "Thuis"
         away = get_team_name(item.get("awayTeam")) or "Uit"
 
-        base_title = f"{home} - {away}"
-
         series = ""
         if isinstance(item.get("series"), dict):
             series = (item["series"].get("name") or "").strip()
@@ -350,10 +348,14 @@ def build_ics(team_id: str, events: List[Dict[str, Any]], state: Dict[str, Dict[
             if isinstance(detail.get("series"), dict):
                 series = (detail["series"].get("name") or "").strip() or series
 
-        # Title with score if available
-        title = base_title + (f" ({score})" if score else "")
+        # Title: Add score at START if game is finished (state = 'played')
+        if match_state.lower() in ['played', 'afgelopen', 'finished'] and score:
+            title = f"{score} {home} - {away}"
+        else:
+            # For upcoming/planned games, no score in title
+            title = f"{home} - {away}"
 
-        # Description in Flemish
+        # Description in Flemish - properly formatted for ICS
         desc_lines = []
         if series:
             desc_lines.append(f"Competitie: {series}")
@@ -365,6 +367,7 @@ def build_ics(team_id: str, events: List[Dict[str, Any]], state: Dict[str, Dict[
             desc_lines.append(f"Status: {match_state}")
         desc_lines.append(f"Wedstrijd ID: {match_id}")
 
+        # Join with actual newlines for icalendar library to handle
         description = "\n".join(desc_lines)
 
         # Stable UID
