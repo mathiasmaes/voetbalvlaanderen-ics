@@ -1,15 +1,15 @@
 <?php
 /**
  * calendar.php
- * ICS calendar generator with 3-day smart caching
+ * ICS calendar generator with 6-hour smart caching
  * Generates and serves iCalendar feeds for Voetbal Vlaanderen teams
  */
 
 // Configuration
-define('CACHE_DURATION', 6 * 3600); // 6 hours (was 3 days - changed for faster updates)
+define('CACHE_DURATION', 6 * 3600); // 6 hours
 define('GRAPHQL_URL', 'https://datalake-prod2018.rbfa.be/graphql');
 define('TEAM_CALENDAR_SHA', '3f0441e6723b9852b4f0cff2c872f4aa674c5de2d23589efc70c7a4ffb7f6383');
-define('MATCH_DETAIL_SHA', ''); // TODO: Add SHA hash to enable detailed match info (location, etc)
+define('MATCH_DETAIL_SHA', 'cd8867b845c206fe7aa75c1ebf7b53cbda0ff030253a45e2e2b4bcc13ee46c9a');
 define('TIMEZONE', 'Europe/Brussels');
 define('MATCH_DURATION_MIN', 60);
 define('LANGUAGE', 'nl');
@@ -137,7 +137,6 @@ function fetch_team_calendar($team_id) {
 
 /**
  * Fetch detailed match info (location, referee, score)
- * Only works if MATCH_DETAIL_SHA is configured
  */
 function fetch_match_detail($match_id) {
     if (empty(MATCH_DETAIL_SHA)) {
@@ -269,7 +268,7 @@ function build_ics_content($team_id, $team_name, $calendar_items, &$state) {
             $location = format_location($item['location']);
         }
         
-        // Try to fetch detailed match info for better location data
+        // Fetch detailed match info for complete location data
         $detail = fetch_match_detail($match_id);
         if ($detail) {
             // Detailed info is more reliable
