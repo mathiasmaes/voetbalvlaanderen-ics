@@ -6,10 +6,10 @@
  */
 
 // Configuration
-define('CACHE_DURATION', 3 * 24 * 3600); // 3 days in seconds
+define('CACHE_DURATION', 6 * 3600); // 6 hours (was 3 days - changed for faster updates)
 define('GRAPHQL_URL', 'https://datalake-prod2018.rbfa.be/graphql');
 define('TEAM_CALENDAR_SHA', '3f0441e6723b9852b4f0cff2c872f4aa674c5de2d23589efc70c7a4ffb7f6383');
-define('MATCH_DETAIL_SHA', ''); // Optional: set for match details
+define('MATCH_DETAIL_SHA', ''); // TODO: Add SHA hash to enable detailed match info (location, etc)
 define('TIMEZONE', 'Europe/Brussels');
 define('MATCH_DURATION_MIN', 60);
 define('LANGUAGE', 'nl');
@@ -136,6 +136,59 @@ function fetch_team_calendar($team_id) {
 }
 
 /**
+ * Fetch detailed match info (location, referee, score)
+ * Only works if MATCH_DETAIL_SHA is configured
+ */
+function fetch_match_detail($match_id) {
+    if (empty(MATCH_DETAIL_SHA)) {
+        return null;
+    }
+    
+    $payload = [
+        'operationName' => 'GetMatchDetail',
+        'variables' => [
+            'matchId' => $match_id,
+            'language' => LANGUAGE
+        ],
+        'extensions' => [
+            'persistedQuery' => [
+                'version' => 1,
+                'sha256Hash' => MATCH_DETAIL_SHA
+            ]
+        ]
+    ];
+    
+    $ch = curl_init(GRAPHQL_URL);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/json',
+        'Accept: application/json, text/plain, */*',
+        'Origin: https://www.voetbalvlaanderen.be',
+        'Referer: https://www.voetbalvlaanderen.be/',
+        'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+    ]);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 45);
+    
+    $response = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    if ($http_code !== 200) {
+        return null;
+    }
+    
+    $result = json_decode($response, true);
+    
+    if (isset($result['errors']) || !isset($result['data']['matchDetail'])) {
+        return null;
+    }
+    
+    return $result['data']['matchDetail'];
+}
+
+/**
  * Get team name from calendar items
  */
 function get_team_name($team_id, $calendar_items) {
@@ -210,6 +263,25 @@ function build_ics_content($team_id, $team_name, $calendar_items, &$state) {
         // Get officials
         $officials = format_officials($item['officials'] ?? []);
         
+        // Get location from basic calendar (might be incomplete)
+        $location = '';
+        if (isset($item['location'])) {
+            $location = format_location($item['location']);
+        }
+        
+        // Try to fetch detailed match info for better location data
+        $detail = fetch_match_detail($match_id);
+        if ($detail) {
+            // Detailed info is more reliable
+            $location = format_location($detail['location'] ?? null) ?: $location;
+            $score = format_score($detail['outcome'] ?? null) ?: $score;
+            $officials = format_officials($detail['officials'] ?? []) ?: $officials;
+            $match_state = strtolower(trim($detail['state'] ?? '')) ?: $match_state;
+            if (isset($detail['series']['name'])) {
+                $series = $detail['series']['name'] ?: $series;
+            }
+        }
+        
         // Build title: Add score at START if game is finished
         if (in_array($match_state, ['played', 'afgelopen', 'finished']) && $score) {
             $title = $score . ' ' . $home . ' - ' . $away;
@@ -222,6 +294,9 @@ function build_ics_content($team_id, $team_name, $calendar_items, &$state) {
         $desc_parts = [];
         if ($series) {
             $desc_parts[] = 'Competitie: ' . $series;
+        }
+        if ($location) {
+            $desc_parts[] = 'Locatie: ' . $location;
         }
         if ($officials) {
             $desc_parts[] = 'Scheidsrechter: ' . $officials;
@@ -236,12 +311,6 @@ function build_ics_content($team_id, $team_name, $calendar_items, &$state) {
         
         // Join with escaped newlines for ICS format
         $description = implode('\\n', $desc_parts);
-        
-        // Location (if available)
-        $location = '';
-        if (isset($item['location'])) {
-            $location = format_location($item['location']);
-        }
         
         // Generate stable UID
         $uid = 'vv-' . $match_id . '@datalake.rbfa';
