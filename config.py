@@ -16,20 +16,24 @@ SORT_BY_DATE = os.getenv("SORT_BY_DATE", "asc")
 # --- RBFA datalake GraphQL endpoint ---
 GRAPHQL_URL = os.getenv("GRAPHQL_URL", "https://datalake-prod2018.rbfa.be/graphql")
 
-# Persisted query hash for GetTeamCalendar (you captured this in DevTools)
+# Persisted query hash for GetTeamCalendar
 TEAM_CALENDAR_SHA = os.getenv(
     "TEAM_CALENDAR_SHA",
     "3f0441e6723b9852b4f0cff2c872f4aa674c5de2d23589efc70c7a4ffb7f6383",
 )
 
-# For match details (location, referee, score, etc.)
-# You need to fill this in once you copy the cURL for the match detail call.
-# (Same idea as the TeamCalendar hash.)
-MATCH_DETAIL_SHA = os.getenv("MATCH_DETAIL_SHA", "")  # <-- set on server
+# Persisted query hash for GetMatchDetail (location, referee, score, etc.)
+MATCH_DETAIL_SHA = os.getenv(
+    "MATCH_DETAIL_SHA",
+    "cd8867b845c206fe7aa75c1ebf7b53cbda0ff030253a45e2e2b4bcc13ee46c9a",
+)
 
 # --- Calendar behavior ---
 TZ = os.getenv("TZ", "Europe/Brussels")
 MATCH_DURATION_MIN = int(os.getenv("MATCH_DURATION_MIN", "60"))
+
+# Cache duration (6 hours for timely updates)
+CACHE_DURATION = int(os.getenv("CACHE_DURATION", str(6 * 3600)))
 
 # --- Paths on server ---
 # On PythonAnywhere, set BASE_DIR to /home/<username>/mysite (or wherever you deploy)
